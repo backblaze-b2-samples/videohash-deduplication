@@ -7,6 +7,32 @@ Runs entirely on local, open-source compute. **No second API key — Backblaze B
 
 **What people search for that this solves:** video deduplication, perceptual video hashing, find duplicate videos, detect re-encoded / re-uploaded videos, near-duplicate video detection, content-based video fingerprinting, reclaim storage from duplicate media.
 
+## What it looks like
+
+**Dashboard** — library and run metrics, a 7-day videos-hashed chart, and a recent-runs table with clusters and reclaimable storage per run.
+
+![Dashboard with library metrics, hashing-activity chart, and recent runs](docs/images/dashboard.png)
+
+**Dedup Runs** — every point-in-time run with its match threshold, videos scanned, cluster count, and reclaimable storage.
+
+![Dedup Runs list showing threshold, videos, clusters, and reclaimable per run](docs/images/dedup-runs.png)
+
+**New dedup run** — pick a match threshold and library prefix, then hash and cluster the whole library in one action.
+
+![New dedup run dialog with match-threshold and library-prefix inputs](docs/images/new-dedup-run.png)
+
+**Cluster report** — near-duplicate clusters with inline video previews, the keep-one-per-cluster crown, per-video Hamming distance, and reclaimable totals.
+
+![Cluster report grouping near-duplicate videos with Hamming distances and reclaimable storage](docs/images/cluster-report.png)
+
+**Library** — every video under the `library/` prefix with inline previews and per-video hash status.
+
+![Library grid of videos with per-video hash status](docs/images/library.png)
+
+**Ingest** — drag-and-drop videos into the `library/` prefix so the next dedup run picks them up.
+
+![Ingest drag-and-drop dropzone for adding videos to the library](docs/images/ingest.png)
+
 ## How it works — Ingest → Hash → Compare → Store → Serve
 
 1. **Ingest.** Upload videos to the `library/` prefix in B2 (the Ingest page), or seed demo clips with `scripts/seed_library.py`.
