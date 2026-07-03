@@ -90,6 +90,7 @@ See [docs/SECURITY.md](docs/SECURITY.md).
 
 - **Ingest**: Browser -> `POST /upload` (multipart) -> validate video -> repo writes to `library/`
 - **Run**: Browser -> `POST /runs` -> service lists `library/`, downloads each un-indexed video, hashes it (`videohash`), updates the index, clusters near-duplicates, writes `dedup/reports/<run_id>.json` -> returns report
+- **Run (with progress)**: Browser -> `POST /runs/stream` -> same pipeline via the `run_dedup_events` generator, but yields a per-video SSE progress event (and a terminal event carrying the report) so the dialog renders a determinate "N of M" bar
 - **Read runs**: `GET /runs` (list) / `GET /runs/{run_id}` (report) -> repo reads report JSON from B2
 - **Delete run**: `DELETE /runs/{run_id}` -> repo deletes the report object
 - **Library/Files**: `GET /videos` (library + index status) / `GET /files*` (bucket browse, presign, delete)

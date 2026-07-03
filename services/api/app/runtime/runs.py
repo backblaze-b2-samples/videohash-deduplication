@@ -1,6 +1,9 @@
+import json
 import logging
+from collections.abc import Iterator
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.service.files import FileKeyError, FileNotFoundError
 from app.service.runs import (
@@ -11,6 +14,7 @@ from app.service.runs import (
     list_runs,
     list_videos,
     run_dedup,
+    run_dedup_events,
 )
 from app.types import (
     DailyCount,
@@ -36,6 +40,35 @@ def create_run(body: DedupRunRequest):
     except RuntimeError as e:
         logger.error("Dedup run failed: %s", e)
         raise HTTPException(status_code=500, detail="Dedup run failed") from None
+
+
+def _sse_frames(threshold: int, prefix: str) -> Iterator[str]:
+    """Map dedup progress events to Server-Sent-Event frames (framing only).
+
+    All business logic stays in `run_dedup_events`; this only serializes each
+    event and, because a stream's HTTP status is already 200, reports failures
+    as a terminal `event: error` frame the client turns into a toast.
+    """
+    try:
+        for event in run_dedup_events(threshold=threshold, prefix=prefix):
+            yield f"data: {event.model_dump_json()}\n\n"
+    except FileKeyError as e:
+        yield f"event: error\ndata: {json.dumps({'detail': e.detail})}\n\n"
+    except RuntimeError as e:
+        logger.error("Dedup run failed: %s", e)
+        yield f"event: error\ndata: {json.dumps({'detail': 'Dedup run failed'})}\n\n"
+
+
+# Streaming variant of POST /runs: same pipeline, but emits per-video progress
+# as SSE so the UI can render a determinate "N of M" bar. The sync generator is
+# run in a worker thread by Starlette, so the hashing loop never blocks the loop.
+@router.post("/runs/stream")
+def create_run_stream(body: DedupRunRequest):
+    return StreamingResponse(
+        _sse_frames(body.threshold, body.prefix),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/runs", response_model=list[DedupReport])

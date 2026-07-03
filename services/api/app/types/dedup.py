@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,24 @@ class DedupReport(BaseModel):
     reclaimable_bytes: int
     reclaimable_human: str
     clusters: list[Cluster]
+
+
+class DedupProgressEvent(BaseModel):
+    """One progress event streamed while a dedup run executes.
+
+    A `stage="hashing"` event is emitted per video with a live `hashed`/`to_hash`
+    count (and the `current` filename in flight); a single `stage="clustering"`
+    event marks the transition to clustering; the terminal `stage="complete"`
+    event carries the persisted `report` so streaming callers can navigate to it
+    exactly like the non-streaming `POST /runs`.
+    """
+
+    stage: Literal["hashing", "clustering", "complete"]
+    hashed: int
+    to_hash: int
+    video_count: int
+    current: str | None = None
+    report: DedupReport | None = None
 
 
 class LibraryVideo(BaseModel):

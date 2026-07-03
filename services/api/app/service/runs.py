@@ -8,6 +8,7 @@ import contextlib
 import logging
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 from app.config import settings
@@ -25,6 +26,7 @@ from app.types import (
     Cluster,
     ClusterMember,
     DailyCount,
+    DedupProgressEvent,
     DedupReport,
     DedupStats,
     LibraryVideo,
@@ -114,11 +116,16 @@ def _hamming(hex_a: str, hex_b: str) -> int:
     return bin(int(hex_a, 16) ^ int(hex_b, 16)).count("1")
 
 
-def run_dedup(threshold: int, prefix: str) -> DedupReport:
-    """Execute one dedup run synchronously and return the persisted report.
+def run_dedup_events(threshold: int, prefix: str) -> Iterator[DedupProgressEvent]:
+    """Execute one dedup run, yielding determinate progress as it goes.
 
-    Downloads each not-yet-hashed video, perceptually hashes it, updates the
-    incremental index in B2, clusters near-duplicates, and writes a report.
+    Same pipeline as :func:`run_dedup` (download → hash → index → cluster →
+    report), but surfaces honest per-video progress so the UI can show a live
+    "N of M" count: one ``stage="hashing"`` event per not-yet-hashed video
+    (emitted BEFORE its blocking download+hash, ``hashed`` = videos already
+    done, ``current`` = the filename in flight), one ``stage="clustering"``
+    event, then a terminal ``stage="complete"`` event carrying the persisted
+    report. No shared mutable state — every value is local to this generator.
     """
     validate_key(prefix)
     now = datetime.now(UTC)
@@ -128,10 +135,24 @@ def run_dedup(threshold: int, prefix: str) -> DedupReport:
     index = get_json(settings.index_key) or _new_index()
     entries: dict = index.setdefault("entries", {})
 
+    pending = [v for v in videos if v.key not in entries]
+    to_hash = len(pending)
+
+    def _event(stage, hashed, current=None, report=None) -> DedupProgressEvent:
+        return DedupProgressEvent(
+            stage=stage,
+            hashed=hashed,
+            to_hash=to_hash,
+            video_count=len(videos),
+            current=current,
+            report=report,
+        )
+
     hashed_this_run = 0
-    for v in videos:
-        if v.key in entries:
-            continue
+    for v in pending:
+        # Announce the file BEFORE the blocking download+hash so the UI shows
+        # what's in flight; `hashed` counts videos already completed.
+        yield _event("hashing", hashed_this_run, current=v.filename)
         tmp = download_to_tmp(v.key)
         try:
             hash_hex, hash_bits = hash_video(tmp)
@@ -145,6 +166,8 @@ def run_dedup(threshold: int, prefix: str) -> DedupReport:
             "hashed_at": datetime.now(UTC).isoformat(),
         }
         hashed_this_run += 1
+
+    yield _event("clustering", hashed_this_run)
 
     index["updated_at"] = datetime.now(UTC).isoformat()
     put_json(settings.index_key, index)
@@ -173,6 +196,20 @@ def run_dedup(threshold: int, prefix: str) -> DedupReport:
         hashed_this_run,
         len(clusters),
     )
+    yield _event("complete", hashed_this_run, report=report)
+
+
+def run_dedup(threshold: int, prefix: str) -> DedupReport:
+    """Run one dedup synchronously, returning the report (non-streaming callers).
+
+    Thin wrapper over :func:`run_dedup_events` so both paths share one pipeline.
+    """
+    report: DedupReport | None = None
+    for event in run_dedup_events(threshold, prefix):
+        if event.report is not None:
+            report = event.report
+    if report is None:  # pragma: no cover — the generator always yields a report
+        raise RuntimeError("Dedup run produced no report")
     return report
 
 

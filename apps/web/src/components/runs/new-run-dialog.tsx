@@ -36,8 +36,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { GeneratingLoader } from "@/components/ui/generating-loader";
+import { Progress } from "@/components/ui/progress";
 import { ApiError } from "@/lib/api-client";
-import { useCreateRun } from "@/lib/queries";
+import { useCreateRunStream } from "@/lib/queries";
+import type { DedupProgressEvent } from "@videohash-deduplication/shared";
 
 // `threshold` is a finite set → a Select (never free text). `prefix` is a path
 // → free-text Input. Both carry safe-default hints via FormDescription rather
@@ -54,10 +56,54 @@ const defaultValues: RunValues = {
   prefix: "library/",
 };
 
+// Determinate in-progress state: a live "N of M" count + advancing bar driven
+// by the backend's per-video SSE events (see useCreateRunStream), so the user
+// can see real progress instead of an indeterminate spinner.
+function RunProgress({ progress }: { progress: DedupProgressEvent | null }) {
+  const stage = progress?.stage;
+  const toHash = progress?.to_hash ?? 0;
+  const hashed = progress?.hashed ?? 0;
+  const current = progress?.current ?? null;
+
+  const isHashing = stage === "hashing" && toHash > 0;
+  const done = stage === "clustering" || stage === "complete";
+  const percent = isHashing
+    ? Math.round((hashed / toHash) * 100)
+    : done
+      ? 100
+      : 0;
+  const label = isHashing
+    ? `Hashing ${hashed} of ${toHash} videos…`
+    : done
+      ? "Clustering near-duplicates…"
+      : "Starting run…";
+
+  return (
+    <div className="flex flex-col items-center gap-4 py-8">
+      <GeneratingLoader size="lg" label={label} />
+      <div className="w-full max-w-xs space-y-2">
+        <Progress value={percent} aria-label={label} />
+        <p className="text-center text-xs text-muted-foreground">
+          {isHashing && current ? (
+            <>
+              Downloading and hashing{" "}
+              <span className="font-medium text-foreground">{current}</span> from
+              B2.
+            </>
+          ) : (
+            "Downloading each video from B2 and computing its perceptual hash."
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function NewRunDialog() {
   const [open, setOpen] = useState(false);
+  const [progress, setProgress] = useState<DedupProgressEvent | null>(null);
   const router = useRouter();
-  const createRun = useCreateRun();
+  const createRun = useCreateRunStream(setProgress);
 
   const form = useForm<RunValues>({
     resolver: zodResolver(runSchema),
@@ -65,6 +111,7 @@ export function NewRunDialog() {
   });
 
   const onSubmit = (values: RunValues) => {
+    setProgress(null);
     createRun.mutate(
       { threshold: Number(values.threshold), prefix: values.prefix },
       {
@@ -111,13 +158,7 @@ export function NewRunDialog() {
         </DialogHeader>
 
         {createRun.isPending ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <GeneratingLoader size="lg" label="Hashing videos and clustering…" />
-            <p className="max-w-xs text-center text-xs text-muted-foreground">
-              Downloading each video from B2 and computing its perceptual hash.
-              This runs synchronously — larger libraries take longer.
-            </p>
-          </div>
+          <RunProgress progress={progress} />
         ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">

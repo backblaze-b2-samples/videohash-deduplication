@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   createRun,
+  createRunStream,
   deleteFile,
   deleteRun,
   getDedupStats,
@@ -15,6 +16,7 @@ import {
   getVideos,
 } from "@/lib/api-client";
 import type {
+  DedupProgressEvent,
   DedupReport,
   DedupRunRequest,
   FileMetadata,
@@ -108,6 +110,21 @@ export function useCreateRun() {
   const qc = useQueryClient();
   return useMutation<DedupReport, ApiError, DedupRunRequest>({
     mutationFn: (body: DedupRunRequest) => createRun(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.all });
+    },
+  });
+}
+
+// Streaming variant of useCreateRun: forwards each per-video progress event to
+// `onProgress` so the dialog can render a determinate "N of M" bar, and still
+// resolves with the final DedupReport for the completion redirect.
+export function useCreateRunStream(
+  onProgress: (event: DedupProgressEvent) => void,
+) {
+  const qc = useQueryClient();
+  return useMutation<DedupReport, ApiError, DedupRunRequest>({
+    mutationFn: (body: DedupRunRequest) => createRunStream(body, onProgress),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.all });
     },

@@ -18,6 +18,7 @@ User journeys inside the application. The end-to-end story is
 - User navigates to `/runs` and clicks **New dedup run**
 - Picks a match threshold (Strict ≤4 / Balanced ≤8 / Loose ≤12 bits) and a prefix (default `library/`)
 - The run executes synchronously: each un-indexed video is downloaded from B2 and perceptually hashed; near-duplicates are clustered
+- The dialog shows determinate progress while it runs — a live "Hashing N of M videos…" count and an advancing bar (streamed per video from `POST /runs/stream`), then "Clustering near-duplicates…"
 - On completion the user is redirected to the cluster report for the new run
 - See: [Deduplication Runs](features/deduplication-runs.md)
 

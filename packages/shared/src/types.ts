@@ -77,6 +77,17 @@ export interface DedupReport {
   clusters: Cluster[];
 }
 
+// Streamed by POST /runs/stream while a run executes. The terminal
+// stage="complete" event carries the finished `report`.
+export interface DedupProgressEvent {
+  stage: "hashing" | "clustering" | "complete";
+  hashed: number;
+  to_hash: number;
+  video_count: number;
+  current: string | null;
+  report: DedupReport | null;
+}
+
 export interface LibraryVideo {
   key: string;
   filename: string;

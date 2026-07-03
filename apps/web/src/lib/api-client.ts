@@ -1,5 +1,6 @@
 import type {
   DailyCount,
+  DedupProgressEvent,
   DedupReport,
   DedupRunRequest,
   DedupStats,
@@ -196,6 +197,78 @@ export async function createRun(body: DedupRunRequest) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * Run a dedup run with live progress. POSTs to the SSE endpoint, invokes
+ * `onProgress` for every per-video event as the backend hashes each video, and
+ * resolves with the DedupReport from the terminal `complete` event — so callers
+ * navigate to the report exactly like the non-streaming `createRun`.
+ */
+export async function createRunStream(
+  body: DedupRunRequest,
+  onProgress: (event: DedupProgressEvent) => void,
+): Promise<DedupReport> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/runs/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw networkError();
+  }
+  if (!res.ok || !res.body) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new ApiError(errBody.detail || `API error: ${res.status}`, res.status);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let report: DedupReport | null = null;
+
+  // Parse one SSE frame ("event:"/"data:" lines) and route it. Throws on an
+  // `event: error` frame so the caller's mutation rejects into an error toast.
+  const handleFrame = (frame: string) => {
+    let name = "message";
+    const dataLines: string[] = [];
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event:")) name = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+    }
+    if (dataLines.length === 0) return;
+    const payload = JSON.parse(dataLines.join("\n"));
+    if (name === "error") {
+      throw new ApiError(payload.detail || "Dedup run failed", 500);
+    }
+    const event = payload as DedupProgressEvent;
+    if (event.stage === "complete" && event.report) {
+      report = event.report;
+    }
+    onProgress(event);
+  };
+
+  // Frames are separated by a blank line; buffer partial reads across chunks.
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep = buffer.indexOf("\n\n");
+    while (sep !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      if (frame.trim()) handleFrame(frame);
+      sep = buffer.indexOf("\n\n");
+    }
+  }
+  if (buffer.trim()) handleFrame(buffer);
+
+  if (!report) {
+    throw new ApiError("Dedup run ended without a report", 500);
+  }
+  return report;
 }
 
 export async function deleteRun(runId: string) {
