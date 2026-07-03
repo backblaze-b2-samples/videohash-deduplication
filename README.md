@@ -1,172 +1,93 @@
-<!-- last_verified: 2026-05-01 -->
-# Vibe Coding Starter Kit
+<!-- last_verified: 2026-07-03 -->
+# Video Dedup — perceptual near-duplicate detection on Backblaze B2
 
-Stop wiring boilerplate and start building. This open-source starter kit gives vibe coders and AI coding agents a production-ready foundation — a full-stack TypeScript + Python template with a pre-built dashboard UI, file upload system, and **[Backblaze B2](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start)** cloud storage already integrated. Save thousands of tokens on setup prompts, skip the "build me a dashboard from scratch" loop, and go straight to building your app's unique features.
+Find **near-duplicate videos** in a [Backblaze B2](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-videohash-dedup) library — re-encodes, resolution changes, watermarks, and minor edits — using the open-source [`videohash`](https://github.com/akamhy/videohash) perceptual hasher. Point a *dedup run* at a folder of videos; the app downloads each one from B2, computes a frame-sampling perceptual hash, keeps a persistent hash **index** in B2, clusters near-duplicates by Hamming distance, and writes a **cluster report** back to B2 so ops teams can reclaim storage and enforce content policy.
 
-**What you get out of the box:**
-- Full-stack dashboard UI (Next.js 16 + React 19 + Tailwind v4 + shadcn/ui)
-- File upload with drag-and-drop, progress tracking, and metadata extraction
-- File browser with preview, download, and delete
-- FastAPI backend with strict layered architecture and structural tests
-- Agent-optimized docs — your AI coding agent can read the repo and start contributing immediately
+Runs entirely on local, open-source compute. **No second API key — Backblaze B2 credentials only.** A full demo run costs **$0** beyond B2 storage.
 
-## What it looks like
+**What people search for that this solves:** video deduplication, perceptual video hashing, find duplicate videos, detect re-encoded / re-uploaded videos, near-duplicate video detection, content-based video fingerprinting, reclaim storage from duplicate media.
 
-**Dashboard** — stats, upload activity, and recent uploads at a glance:
+## How it works — Ingest → Hash → Compare → Store → Serve
 
-![Dashboard view showing stat cards, upload activity chart, and recent uploads table](docs/images/b2-starterkit-dashboard1.png)
+1. **Ingest.** Upload videos to the `library/` prefix in B2 (the Ingest page), or seed demo clips with `scripts/seed_library.py`.
+2. **Hash.** A dedup run downloads each not-yet-hashed video and computes a perceptual hash with `videohash` (frame sampling → collage → wavelet hash). Robust to re-encodes, scaling, and minor edits.
+3. **Compare.** Videos are clustered by pairwise **Hamming distance ≤ threshold** using union-find (connected components).
+4. **Store.** The incremental hash index (`dedup/index/hash_index.json`) and every run report (`dedup/reports/<run_id>.json`) are written to B2. Re-runs only hash new videos.
+5. **Serve.** Browse the library with per-video hash status, read cluster reports with inline `<video>` previews, and see reclaimable-storage estimates.
 
-**File browser** — tree view with preview, download, and delete:
+**B2 is the storage layer for all three artifacts** — the source library, the persistent hash index, and every run report — accessed over the S3-compatible API with a custom user agent and the standard `B2_*` env vars.
 
-![File browser view showing a tree of files with hover actions](docs/images/b2-starterkit-fileview2.png)
-
-## Agent-First Architecture
-
-This repo is optimized for coding agents. Use the template, point your agent at it, and start building.
-
-The structure follows the principle that **repository knowledge is the system of record**. Anything an agent can't access in-context doesn't exist — so everything it needs to reason about the codebase is versioned, co-located, and discoverable from the repo itself.
-
-### How it works
-
-**[AGENTS.md](AGENTS.md) is the single source of truth for all coding agents.** A ~100 line entry point gives agents the repository layout, architectural invariants, commands, conventions, and pointers to deeper docs. Agent-specific files (CLAUDE.md, etc.) are thin pointers back to AGENTS.md.
-
-**Architecture is enforced mechanically, not by convention.** Layering rules, import boundaries, file size limits, and SDK containment are verified by structural tests and lints that run on every change. When rules are enforceable by code, agents follow them reliably.
-
-**The knowledge base is structured for progressive disclosure:**
-
-```
-AGENTS.md              Single source of truth — layout, invariants, commands, conventions
-ARCHITECTURE.md        System layout, layering rules, data flows
-docs/
-  features/            Feature docs (inputs, outputs, flows, edge cases)
-  app-workflows.md     User journeys
-  dev-workflows.md     Engineering workflows and testing
-  SECURITY.md          Security principles
-  RELIABILITY.md       Reliability expectations
-  exec-plans/          Execution plans and tech debt tracker
-```
-
-### Key design decisions
-
-| Principle | Implementation |
-|-----------|---------------|
-| Give agents a single source of truth | AGENTS.md ~100 lines — layout, invariants, commands, conventions |
-| Enforce invariants mechanically | Structural tests + ruff + ESLint verify boundaries |
-| DRY documentation | Each fact lives in one place; no redundant files to drift |
-| Strict layered architecture | `types -> config -> repo -> service -> runtime`, enforced by tests |
-| Prefer boring, composable libraries | stdlib logging over frameworks, Pydantic over ad-hoc validation |
-| Contain external SDKs | `boto3` only in `repo/` layer — verified by structural test |
-| Keep files agent-sized | 300-line limit per file, enforced by test |
-| Docs updated with code | Same-PR requirement prevents documentation rot |
-| Structured observability | JSON logging, `/metrics` endpoint, request tracing |
-
-This approach draws from [OpenAI's experience building with Codex](https://openai.com/index/harness-engineering/): agents work best in environments with strict boundaries, predictable structure, and progressive context disclosure.
+> **ffmpeg is bundled.** `videohash` shells out to `ffmpeg` for frame extraction. This app ships [`imageio-ffmpeg`](https://pypi.org/project/imageio-ffmpeg/) and puts its static binary on `PATH` automatically — **no system ffmpeg install required** on a fresh clone.
 
 ## Quick Start
 
-You need: Node.js >= 20, pnpm >= 9, Python >= 3.11, and a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start)**.
-
-### Start a new project
-
-**Option 1: GitHub Template (recommended)**
-
-Click the green **"Use this template"** button at the top of this repo, name your project, then:
+You need: Node.js >= 20, pnpm >= 9, Python >= 3.11, and a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-videohash-dedup)**.
 
 ```bash
-git clone https://github.com/yourorg/my-cool-app.git
-cd my-cool-app
-```
-
-**Option 2: Clone and reinitialize**
-
-```bash
-git clone https://github.com/backblaze-b2-samples/vibe-coding-starter-kit.git my-cool-app
-cd my-cool-app
-rm -rf .git
-git init
-git add .
-git commit -m "Initial commit from vibe-coding-starter-kit"
-```
-
-Either way you get a clean project with no upstream history — ready to push to your own repo and point your agent at it.
-
-### Setup
-
-**1. Install dependencies**
-
-```bash
+# 1. Install frontend deps
 pnpm install
-```
 
-**2. Set up the backend**
-
-```bash
+# 2. Set up the backend (installs videohash + bundled ffmpeg)
 cd services/api
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cd ../..
-```
 
-**3. Add your B2 credentials**
+# 3. Add your B2 credentials
+cp .env.example .env   # then edit .env — see the table below
 
-Set up your local `.env`:
+# 4. (optional) Seed demo videos into library/
+services/api/.venv/bin/python scripts/seed_library.py
 
-```bash
-cp .env.example .env
-```
-
-Open `.env` in your editor and keep it visible. Then head to the [Backblaze B2 dashboard](https://secure.backblaze.com/b2_buckets.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start) and:
-
-1. **Create a bucket.** B2 will show two values — paste each into `.env`:
-   - **Bucket Unique Name** → `B2_BUCKET_NAME`
-   - **Endpoint** → `B2_ENDPOINT`
-2. **Create an application key** with `Read and Write` permission. B2 will show two values — paste each into `.env`:
-   - **keyID** → `B2_KEY_ID`
-   - **applicationKey** → `B2_APPLICATION_KEY` *(only shown once — paste it now)*
-
-> Want a walkthrough? See the docs for [creating a bucket](https://www.backblaze.com/docs/cloud-storage-create-and-manage-buckets) and [creating app keys](https://www.backblaze.com/docs/cloud-storage-create-and-manage-app-keys).
-
-**4. Run it**
-
-```bash
+# 5. Run it
 pnpm dev
 ```
 
-That's it. Frontend at `localhost:3000`, API at `localhost:8000`. Upload a file and see it working.
+Frontend at `localhost:3000`, API at `localhost:8000`. Open **Dedup Runs → New dedup run** to cluster the near-duplicates.
 
-`pnpm dev` runs `pnpm doctor` first — a preflight check that catches the common setup gotchas (wrong Node/Python version, missing venv, missing or placeholder `.env`, ports already taken) and tells you exactly how to fix each one. Run it standalone any time with `pnpm doctor`.
+`pnpm dev` runs `pnpm doctor` first — a preflight check for the common setup gotchas (wrong Node/Python version, missing venv, missing or placeholder `.env`, ports in use).
 
-## Building Your App
+### Environment variables
 
-When you adapt this kit for a new app, keep the shared scaffolding and only swap out what's app-specific:
+Copy `.env.example` to `.env` and fill in these values from the [B2 dashboard](https://secure.backblaze.com/b2_buckets.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-videohash-dedup):
 
-- **Keep** the UI kit (`apps/web/src/components/ui/` + design tokens in `globals.css` + `/design`).
-- **Keep** the File Explorer (`/files`) and Upload (`/upload`) pages and their sidebar nav entries — they're the reusable B2-backed surface.
-- **Adapt** the Dashboard (`/`) to your use case — replace the default stats, chart, and recent uploads with metrics that reflect what your app actually does.
-- **Rebrand** by editing a single file: `apps/web/src/lib/app-config.ts` holds the app name and description (`APP_NAME`, `APP_DESCRIPTION`). Changing them there updates the page title, sidebar, and breadcrumb everywhere — no other files to touch.
-
-Full contract and rationale: [AGENTS.md §2 — Building on This Starter Kit](AGENTS.md#2-building-on-this-starter-kit).
+| Variable | Required | What it is |
+|---|---|---|
+| `B2_APPLICATION_KEY_ID` | yes | Application **keyID** (Read and Write) |
+| `B2_APPLICATION_KEY` | yes | Application key secret (shown once) |
+| `B2_BUCKET_NAME` | yes | Bucket unique name |
+| `B2_REGION` | yes | Region slug, e.g. `us-west-004`. The S3 endpoint is derived from it (`https://s3.<region>.backblazeb2.com`) — no hardcoded host. |
+| `B2_PUBLIC_URL_BASE` | no | Public/CDN base URL for public objects. Leave blank for private buckets (the app uses presigned URLs). |
 
 ## Core Features
 
-- [File Upload](docs/features/file-upload.md) — drag-and-drop upload with real-time progress
-- [File Browser](docs/features/file-browser.md) — list, preview, download, delete files
-- [Dashboard](docs/features/dashboard.md) — stats cards, upload chart, recent uploads
-- [Metadata Extraction](docs/features/metadata-extraction.md) — image dimensions, EXIF, PDF info, checksums
-- [Design System](docs/design-system.md) — tokens, primitives, AI elements, the blaze generating loader, and inline `ErrorState` / `EmptyState` patterns. Live preview at `/design`.
-- Inline error handling — fetch failures surface *what's wrong* (API offline, 401, 5xx) and offer a Retry, instead of silently rendering empty state.
-- Single-source config — one `.env` at the repo root powers both API and web app, validated at startup so misconfig fails fast with a readable message.
-- Centralized data layer — every fetch goes through TanStack Query hooks in `apps/web/src/lib/queries.ts`; cache invalidation is one call after a mutation.
-- Structural tests — verify layering rules, import boundaries, SDK containment, file size limits
-- Structured JSON logging — every request traced with `request_id` and timing
-- `/health` endpoint — B2 connectivity check
-- `/metrics` endpoint — Prometheus-format counters (request count, latency, uploads)
+- [Perceptual Video Hashing](docs/features/perceptual-hashing.md) — frame-sampling perceptual hash per video via `videohash`. Pure CPU, no API key, robust to re-encodes/resize/watermarks.
+- [Deduplication Runs](docs/features/deduplication-runs.md) — the primary entity: run, read, and delete point-in-time cluster reports stored in B2.
+- [Ingest](docs/features/ingest.md) — drag-and-drop videos into the `library/` prefix.
+- [File Browser](docs/features/file-browser.md) — the full-bucket explorer plus the `library/`-scoped Library explorer with hash status.
+- [Dashboard](docs/features/dashboard.md) — library size, run count, latest-run clusters and reclaimable storage, videos-hashed-per-day.
+- [Design System](docs/design-system.md) — tokens, primitives, the blaze generating loader, and inline `ErrorState` / `EmptyState` patterns. Live preview at `/design`.
+
+## Data contracts
+
+`dedup/index/hash_index.json` — incremental perceptual-hash index keyed by object key:
+
+```json
+{ "version": 1, "updated_at": "<ISO>",
+  "entries": { "library/base.mp4": { "hash_hex": "0x...", "hash_bits": "0b...", "size_bytes": 12345, "hashed_at": "<ISO>" } } }
+```
+
+`dedup/reports/<run_id>.json` — an immutable cluster report. "Reclaimable" = sum of a cluster's member sizes minus the largest (keep one per cluster). Singletons are excluded.
+
+## Scaling notes
+
+The run endpoint is **synchronous** — fine at demo scale (a few short clips; the index skips already-hashed videos). For 100K+ libraries, move hashing to a background job/queue and replace the O(n²) pairwise compare with an LSH or BK-tree index over the hashes.
 
 ## Tech Stack
 
 - TypeScript, Next.js 16, React 19, Tailwind v4, shadcn/ui, Recharts
-- TanStack Query — caching, dedup, retry, stale-while-revalidate for every fetch
-- Python 3.11+, FastAPI, boto3, Pydantic v2, Pillow, PyPDF2
+- TanStack Query — caching, dedup, retry for every fetch
+- Python 3.11+, FastAPI, boto3, Pydantic v2, `videohash`, `imageio-ffmpeg`, Pillow
 - Backblaze B2 (S3-compatible object storage)
 - pnpm workspaces (monorepo)
 
@@ -175,14 +96,12 @@ Full contract and rationale: [AGENTS.md §2 — Building on This Starter Kit](AG
 | Command | What it does |
 |---------|-------------|
 | `pnpm dev` | Start frontend + backend |
-| `pnpm dev:web` | Frontend only |
-| `pnpm dev:api` | Backend only |
-| `pnpm build` | Build frontend |
+| `pnpm build` | Build frontend (type check) |
 | `pnpm lint` | Lint frontend |
 | `pnpm lint:api` | Lint backend (ruff) |
 | `pnpm test:api` | Run backend tests |
 | `pnpm check:structure` | Verify layering rules |
-| `pnpm test:e2e` | Playwright e2e tests (run `pnpm --filter @vibe-coding-starter-kit/web exec playwright install chromium` once first) |
+| `services/api/.venv/bin/python scripts/seed_library.py` | Seed demo videos into `library/` |
 
 ## Documentation Map
 
@@ -190,24 +109,12 @@ Full contract and rationale: [AGENTS.md §2 — Building on This Starter Kit](AG
 |-----|---------|
 | [AGENTS.md](AGENTS.md) | Agent table of contents — start here |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System layout, layering, data flows |
-| [docs/features/](docs/features/) | Feature docs (upload, browser, dashboard, metadata) |
-| [docs/design-system.md](docs/design-system.md) | Design tokens, primitives, AI elements, loader, error/empty states |
+| [docs/features/](docs/features/) | Feature docs |
 | [docs/app-workflows.md](docs/app-workflows.md) | User journeys |
 | [docs/dev-workflows.md](docs/dev-workflows.md) | Engineering workflows and testing |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security principles |
 | [docs/RELIABILITY.md](docs/RELIABILITY.md) | Reliability expectations |
-| [docs/exec-plans/](docs/exec-plans/) | Execution plans and tech debt tracker |
-
-## Contributing
-
-Start with [AGENTS.md](AGENTS.md). It's the map — everything else is discoverable from there.
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-## Claude Agent B2 Skill
-
-Manage Backblaze B2 from your terminal using natural language (list/search, audits, stale or large file detection, security checks, safe cleanup).
-
-Repo: [https://github.com/backblaze-b2-samples/claude-skill-b2-cloud-storage](https://github.com/backblaze-b2-samples/claude-skill-b2-cloud-storage)

@@ -6,36 +6,24 @@ from app.service.metadata import extract_metadata
 from app.types import FileUploadResponse
 from app.types.formatting import humanize_bytes
 
+# This app ingests *videos* into the dedup library. Only video types are
+# accepted — the perceptual hasher (videohash) operates on video frames.
 ALLOWED_TYPES = {
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "application/pdf",
-    "text/plain",
-    "text/csv",
-    "application/json",
-    "application/zip",
     "video/mp4",
-    "audio/mpeg",
-    "audio/wav",
-    "image/svg+xml",
+    "video/quicktime",
+    "video/webm",
+    "video/x-matroska",
+    "video/x-msvideo",
+    "video/mpeg",
 }
 
 MIME_EXTENSION_MAP: dict[str, set[str]] = {
-    "image/jpeg": {"jpg", "jpeg", "jfif"},
-    "image/png": {"png"},
-    "image/gif": {"gif"},
-    "image/webp": {"webp"},
-    "application/pdf": {"pdf"},
-    "text/plain": {"txt", "text", "log", "md"},
-    "text/csv": {"csv"},
-    "application/json": {"json"},
-    "application/zip": {"zip"},
-    "video/mp4": {"mp4"},
-    "audio/mpeg": {"mp3", "mpeg"},
-    "audio/wav": {"wav"},
-    "image/svg+xml": {"svg"},
+    "video/mp4": {"mp4", "m4v"},
+    "video/quicktime": {"mov", "qt"},
+    "video/webm": {"webm"},
+    "video/x-matroska": {"mkv"},
+    "video/x-msvideo": {"avi"},
+    "video/mpeg": {"mpeg", "mpg"},
 }
 
 _SAFE_FILENAME_RE = re.compile(r"[^\w\-.]")
@@ -113,8 +101,9 @@ def process_upload(
         )
 
     # B2 buckets are always versioned — uploading the same key creates a new
-    # version automatically.  No duplicate rejection needed.
-    key = f"uploads/{safe_name}"
+    # version automatically.  No duplicate rejection needed. Ingested videos
+    # land in the dedup library so the next run picks them up.
+    key = f"{settings.library_prefix}{safe_name}"
     result = upload_file(file_data, key, content_type)
     metadata = extract_metadata(file_data, safe_name, content_type)
 

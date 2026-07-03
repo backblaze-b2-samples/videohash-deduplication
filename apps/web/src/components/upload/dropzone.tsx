@@ -10,7 +10,17 @@ interface DropzoneProps {
   disabled?: boolean;
 }
 
-const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_SIZE = 500 * 1024 * 1024; // 500MB — videos are larger than generic files
+
+// Accepted video types, mirrored from the API's ALLOWED_TYPES.
+const ACCEPT = {
+  "video/mp4": [".mp4", ".m4v"],
+  "video/quicktime": [".mov"],
+  "video/webm": [".webm"],
+  "video/x-matroska": [".mkv"],
+  "video/x-msvideo": [".avi"],
+  "video/mpeg": [".mpeg", ".mpg"],
+};
 
 export function Dropzone({
   onFilesSelected,
@@ -37,21 +47,22 @@ export function Dropzone({
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     onDropRejected,
+    accept: ACCEPT,
     maxSize: MAX_SIZE,
     disabled,
     multiple: true,
   });
 
   const active = isDragActive && !disabled;
-  let title = "Drag & drop files here, or click to browse";
-  let description = "Max file size: 100 MB per file";
+  let title = "Drag & drop videos here, or click to browse";
+  let description = "MP4, MOV, WebM, MKV, AVI · up to 500 MB per file";
 
   if (disabled) {
-    title = "Uploads in progress";
-    description = "New files can be added when the current queue finishes.";
+    title = "Ingest in progress";
+    description = "New videos can be added when the current queue finishes.";
   } else if (active) {
-    title = "Drop files here";
-    description = "Release to add files to the upload queue.";
+    title = "Drop videos here";
+    description = "Release to add them to the ingest queue.";
   }
 
   let stateClasses = "border-border hover:border-primary/60 hover:bg-muted/60";

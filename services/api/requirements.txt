@@ -7,7 +7,16 @@ pydantic-settings>=2.7.0
 boto3>=1.35.0
 python-magic>=0.4.27
 Pillow>=11.0.0
-PyPDF2>=3.0.0
+
+# Perceptual video hashing (videohash 3.0.1, May 2022). It shells out to a
+# bare `ffmpeg`, so we bundle imageio-ffmpeg and put its static binary on PATH
+# (see app/service/dedup.py). videohash's collage maker uses the removed
+# Image.ANTIALIAS — dedup.py installs the compat alias before importing it.
+# videohash pulls in ImageHash, imagedominantcolor, scipy and yt-dlp
+# transitively; scipy/imagehash need numpy<2 at runtime on Python 3.11.
+videohash==3.0.1
+imageio-ffmpeg>=0.5.0
+numpy<2
 
 # Dev / quality
 ruff>=0.8.0

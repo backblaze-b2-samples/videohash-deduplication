@@ -194,9 +194,9 @@ export function SettingsForm() {
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-md border border-border p-3">
                   <div className="space-y-0.5">
-                    <FormLabel>Email me on every upload</FormLabel>
+                    <FormLabel>Email me when a run completes</FormLabel>
                     <FormDescription>
-                      You&apos;ll get a receipt for each successful upload.
+                      You&apos;ll get a summary for each completed dedup run.
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -221,9 +221,9 @@ export function SettingsForm() {
                     />
                   </FormControl>
                   <div className="grid gap-1.5 leading-none">
-                    <FormLabel>Warn me when approaching quota</FormLabel>
+                    <FormLabel>Highlight high-reclaimable runs</FormLabel>
                     <FormDescription>
-                      Shows a banner once usage crosses your threshold.
+                      Flags a run once its reclaimable share crosses your threshold.
                     </FormDescription>
                   </div>
                 </FormItem>
@@ -235,7 +235,7 @@ export function SettingsForm() {
               name="quotaThreshold"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Quota warning threshold (%)</FormLabel>
+                  <FormLabel>Reclaimable alert threshold (%)</FormLabel>
                   <FormControl>
                     <Input
                       type="number"

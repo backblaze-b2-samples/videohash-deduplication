@@ -150,7 +150,10 @@ export function UploadForm() {
       const name = rejection.file.name;
       const errors = rejection.errors.map((e) => {
         if (e.code === "file-too-large") {
-          return `exceeds 100MB limit (${humanizeBytes(rejection.file.size)})`;
+          return `exceeds 500MB limit (${humanizeBytes(rejection.file.size)})`;
+        }
+        if (e.code === "file-invalid-type") {
+          return "not a supported video type";
         }
         return e.message;
       });
@@ -200,7 +203,7 @@ export function UploadForm() {
   return (
     <Card>
       <CardHeader className="border-b border-border py-4 px-5">
-        <CardTitle className="card-title">Upload Files</CardTitle>
+        <CardTitle className="card-title">Ingest Videos</CardTitle>
       </CardHeader>
       <CardContent className="p-5 space-y-4">
         <Dropzone

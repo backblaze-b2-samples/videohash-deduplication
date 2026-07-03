@@ -1,38 +1,47 @@
-<!-- last_verified: 2026-03-10 -->
+<!-- last_verified: 2026-07-03 -->
 # App Workflows
 
-User journeys inside the application.
+User journeys inside the application. The end-to-end story is
+**Ingest → Run → Read → Manage**.
 
-## Upload Files
+## Ingest videos
 
-- User navigates to `/upload`
-- Drops or selects files in the dropzone
-- Client validates file size (max 100MB) and type
-- Progress bar shows per-file upload status
-- On success: toast notification, green checkmark
-- On failure: red status icon with error message
-- User can clear completed uploads
-- See: [File Upload](features/file-upload.md)
+- User navigates to `/upload` (Ingest)
+- Drops or selects videos in the dropzone (MP4, MOV, WebM, MKV, AVI, MPEG)
+- Client validates size (max 500MB) and type; per-file progress bars show status
+- On success the video is stored under `library/`; on failure the row stays retryable
+- (Or) seed demo clips with `services/api/.venv/bin/python scripts/seed_library.py`
+- See: [Ingest](features/ingest.md)
 
-## Browse and Manage Files
+## Start a dedup run (primary workflow)
 
-- User navigates to `/files`
-- Page loads file list from API (sorted most recent first)
-- Files displayed in tree view with folders and type-specific icons
-- Top-level folders auto-expand on load
-- Hover a file row to see action buttons (preview / download / delete)
-- **Preview**: opens dialog with image/PDF preview + metadata panel
-- **Download**: fetches presigned URL, browser downloads file
-- **Delete**: removes file from B2, row removed from tree, toast confirms
-- Empty bucket shows "No files found" with upload prompt
-- See: [File Browser](features/file-browser.md)
+- User navigates to `/runs` and clicks **New dedup run**
+- Picks a match threshold (Strict ≤4 / Balanced ≤8 / Loose ≤12 bits) and a prefix (default `library/`)
+- The run executes synchronously: each un-indexed video is downloaded from B2 and perceptually hashed; near-duplicates are clustered
+- On completion the user is redirected to the cluster report for the new run
+- See: [Deduplication Runs](features/deduplication-runs.md)
 
-## View Dashboard
+## Read a cluster report
 
-- User navigates to `/` (home)
-- Three parallel API calls load: stats, recent files, upload activity
-- Stats cards show: total files, storage used, uploads today, total downloads
-- Upload chart shows last 7 days of upload activity as bar chart
-- Recent uploads table shows last 10 files with filename, size, type, date
-- Empty state: "No files uploaded yet" messages
+- User opens `/runs/[runId]`
+- Summary tiles show videos scanned, duplicate clusters, duplicate videos, reclaimable storage
+- Each cluster card shows its members as inline `<video>` previews; the largest video is marked "Keep", others show their bit-distance from it
+- "No near-duplicates found" is shown when everything is distinct at the chosen threshold
+
+## Manage runs
+
+- `/runs` lists every run with threshold, video/cluster counts, and reclaimable bytes
+- Delete a run (row action or detail button) → confirm dialog → the report JSON is removed from B2 (index and videos are untouched)
+- Runs are immutable — re-tuning the threshold means starting a **new** run
+
+## Browse the library and bucket
+
+- `/library`: videos under `library/` with a Hashed ✓ / Pending badge and a `<video>` thumbnail each
+- `/files`: the full-bucket tree explorer with preview (image/video/PDF), download, and delete
+- See: [File Browser & Library Explorer](features/file-browser.md)
+
+## View the dashboard
+
+- `/` (home): library video count, library size, run count, and latest-run reclaimable storage
+- A bar chart of videos hashed per day plus a recent-runs table
 - See: [Dashboard](features/dashboard.md)

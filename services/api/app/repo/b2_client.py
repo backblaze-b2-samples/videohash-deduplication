@@ -1,6 +1,8 @@
 import functools
 import io
+import json
 import mimetypes
+import tempfile
 from datetime import UTC, datetime
 from urllib.parse import quote
 
@@ -28,9 +30,9 @@ def _split_key(key: str) -> tuple[str, str]:
 
 def _public_url(key: str) -> str | None:
     """Build a public URL for an object key, percent-encoding the path."""
-    if not settings.b2_public_url:
+    if not settings.b2_public_url_base:
         return None
-    return f"{settings.b2_public_url}/{quote(key, safe='/')}"
+    return f"{settings.b2_public_url_base}/{quote(key, safe='/')}"
 
 
 @functools.lru_cache(maxsize=1)
@@ -38,11 +40,12 @@ def get_s3_client():
     return boto3.client(
         "s3",
         endpoint_url=settings.b2_endpoint,
-        aws_access_key_id=settings.b2_key_id,
+        region_name=settings.b2_region,
+        aws_access_key_id=settings.b2_application_key_id,
         aws_secret_access_key=settings.b2_application_key,
         config=Config(
             signature_version="s3v4",
-            user_agent_extra="b2ai-oss-start",
+            user_agent_extra="b2ai-videohash-dedup",
         ),
     )
 
@@ -84,6 +87,20 @@ def upload_file(
     )
 
 
+def _to_metadata(obj: dict) -> FileMetadata:
+    folder, filename = _split_key(obj["Key"])
+    return FileMetadata(
+        key=obj["Key"],
+        filename=filename,
+        folder=folder,
+        size_bytes=obj["Size"],
+        size_human=humanize_bytes(obj["Size"]),
+        content_type=_guess_content_type(obj["Key"]),
+        uploaded_at=obj["LastModified"],
+        url=_public_url(obj["Key"]),
+    )
+
+
 def list_files(prefix: str = "", max_keys: int = 1000) -> list[FileMetadata]:
     """List files from B2. Raises RuntimeError on S3 failure."""
     client = get_s3_client()
@@ -95,23 +112,76 @@ def list_files(prefix: str = "", max_keys: int = 1000) -> list[FileMetadata]:
         )
     except ClientError as e:
         raise RuntimeError(f"B2 list failed: {e}") from e
-    files: list[FileMetadata] = []
-    for obj in response.get("Contents", []):
-        folder, filename = _split_key(obj["Key"])
-        files.append(
-            FileMetadata(
-                key=obj["Key"],
-                filename=filename,
-                folder=folder,
-                size_bytes=obj["Size"],
-                size_human=humanize_bytes(obj["Size"]),
-                content_type=_guess_content_type(obj["Key"]),
-                uploaded_at=obj["LastModified"],
-                url=_public_url(obj["Key"]),
-            )
-        )
+    files = [_to_metadata(obj) for obj in response.get("Contents", [])]
     files.sort(key=lambda f: f.uploaded_at, reverse=True)
     return files
+
+
+def list_prefix(prefix: str) -> list[FileMetadata]:
+    """Paginate through every object under a prefix. Raises RuntimeError on failure."""
+    client = get_s3_client()
+    files: list[FileMetadata] = []
+    kwargs: dict = {
+        "Bucket": settings.b2_bucket_name,
+        "Prefix": prefix,
+        "MaxKeys": 1000,
+    }
+    try:
+        while True:
+            response = client.list_objects_v2(**kwargs)
+            files.extend(_to_metadata(obj) for obj in response.get("Contents", []))
+            if not response.get("IsTruncated"):
+                break
+            kwargs["ContinuationToken"] = response["NextContinuationToken"]
+    except ClientError as e:
+        raise RuntimeError(f"B2 list failed for '{prefix}': {e}") from e
+    return files
+
+
+def download_to_tmp(key: str, suffix: str = "") -> str:
+    """Stream a B2 object to a temp file and return its path.
+
+    Caller owns the temp file and must delete it. Raises RuntimeError on failure.
+    """
+    client = get_s3_client()
+    fd, path = tempfile.mkstemp(suffix=suffix or "-" + key.rsplit("/", 1)[-1])
+    try:
+        with open(fd, "wb") as f:
+            client.download_fileobj(settings.b2_bucket_name, key, f)
+    except ClientError as e:
+        import os
+
+        os.unlink(path)
+        raise RuntimeError(f"B2 download failed for '{key}': {e}") from e
+    return path
+
+
+def get_json(key: str) -> dict | None:
+    """Read a JSON object from B2. Returns None if the key does not exist."""
+    client = get_s3_client()
+    try:
+        response = client.get_object(Bucket=settings.b2_bucket_name, Key=key)
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("404", "NoSuchKey"):
+            return None
+        raise RuntimeError(f"B2 get_json failed for '{key}': {e}") from e
+    return json.loads(response["Body"].read())
+
+
+def put_json(key: str, obj: dict) -> None:
+    """Write a JSON object to B2. Raises RuntimeError on failure."""
+    client = get_s3_client()
+    body = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+    try:
+        client.put_object(
+            Bucket=settings.b2_bucket_name,
+            Key=key,
+            Body=io.BytesIO(body),
+            ContentType="application/json",
+        )
+    except ClientError as e:
+        raise RuntimeError(f"B2 put_json failed for '{key}': {e}") from e
 
 
 def get_file_metadata(key: str) -> FileMetadata | None:
@@ -150,19 +220,26 @@ def delete_file(key: str) -> None:
 
 
 def get_presigned_url(
-    key: str, filename: str | None = None, expires_in: int = 600
+    key: str,
+    filename: str | None = None,
+    expires_in: int = 600,
+    disposition: str = "attachment",
 ) -> str:
-    """Generate a presigned download URL. Raises RuntimeError on failure."""
+    """Generate a presigned GET URL. Raises RuntimeError on failure.
+
+    `disposition="inline"` is used for in-browser <img>/<video> previews so the
+    media renders instead of triggering a download.
+    """
     client = get_s3_client()
     params: dict = {"Bucket": settings.b2_bucket_name, "Key": key}
     if filename:
         # RFC 5987 encoding for non-ASCII filenames
         encoded = quote(filename, safe="")
         params["ResponseContentDisposition"] = (
-            f"attachment; filename=\"{encoded}\"; filename*=UTF-8''{encoded}"
+            f"{disposition}; filename=\"{encoded}\"; filename*=UTF-8''{encoded}"
         )
     else:
-        params["ResponseContentDisposition"] = "attachment"
+        params["ResponseContentDisposition"] = disposition
     try:
         return client.generate_presigned_url(
             "get_object",

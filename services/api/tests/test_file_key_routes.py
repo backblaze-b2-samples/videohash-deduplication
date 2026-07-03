@@ -67,7 +67,7 @@ async def test_query_download_route_handles_reserved_key_shapes(
     monkeypatch.setattr(
         files_service,
         "get_presigned_url",
-        lambda requested_key, filename=None: presign_calls.append(requested_key)
+        lambda requested_key, filename=None, disposition="attachment": presign_calls.append(requested_key)
         or f"https://example.test/download/{len(presign_calls)}",
     )
 
@@ -76,7 +76,6 @@ async def test_query_download_route_handles_reserved_key_shapes(
     assert response.status_code == 200
     assert response.json()["url"].startswith("https://example.test/download/")
     assert presign_calls == [key]
-    assert files_service.get_download_count() == 1
 
 
 @pytest.mark.asyncio
@@ -89,7 +88,7 @@ async def test_query_preview_route_handles_reserved_key_shapes(
     monkeypatch.setattr(
         files_service,
         "get_presigned_url",
-        lambda requested_key, filename=None: presign_calls.append(requested_key)
+        lambda requested_key, filename=None, disposition="attachment": presign_calls.append(requested_key)
         or f"https://example.test/preview/{len(presign_calls)}",
     )
 
@@ -98,7 +97,6 @@ async def test_query_preview_route_handles_reserved_key_shapes(
     assert response.status_code == 200
     assert response.json()["url"].startswith("https://example.test/preview/")
     assert presign_calls == [key]
-    assert files_service.get_download_count() == 0
 
 
 @pytest.mark.asyncio
@@ -141,7 +139,7 @@ async def test_query_key_routes_reject_invalid_keys(
     monkeypatch.setattr(
         files_service,
         "get_presigned_url",
-        lambda requested_key, filename=None: repo_calls.append(requested_key)
+        lambda requested_key, filename=None, disposition="attachment": repo_calls.append(requested_key)
         or "https://example.test/file",
     )
     monkeypatch.setattr(

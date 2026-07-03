@@ -1,4 +1,4 @@
-# Code Review: Vibe Coding OSS Starter Kit
+# Code Review: Video Dedup (videohash-deduplication)
 
 **Reviewer:** Claude | **Date:** 2026-02-26
 

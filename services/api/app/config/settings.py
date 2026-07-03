@@ -2,11 +2,17 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    b2_endpoint: str = "https://s3.us-west-004.backblazeb2.com"
-    b2_key_id: str = ""
+    # --- Backblaze B2 (S3-compatible API) ---
+    # Standard B2_* env names (see .env.example). The S3 endpoint is DERIVED
+    # from the region so callers never hardcode a regional hostname. The region
+    # itself is supplied via the B2_REGION env var (required at startup — see
+    # main.py); no region string is baked into source.
+    b2_region: str = ""
+    b2_application_key_id: str = ""
     b2_application_key: str = ""
     b2_bucket_name: str = ""
-    b2_public_url: str = ""
+    # Optional public/CDN base for building browser URLs to public objects.
+    b2_public_url_base: str = ""
 
     api_port: int = 8000
     # Explicit allowlist by default — covers Next on :3000 and the
@@ -19,14 +25,25 @@ class Settings(BaseSettings):
     # listing each one. NEVER ship this to production.
     api_cors_origin_regex: str = ""
 
-    # Upload limits
-    max_file_size: int = 100 * 1024 * 1024  # 100MB
+    # Ingest limits — videos are larger than the starter's generic uploads.
+    max_file_size: int = 500 * 1024 * 1024  # 500MB
 
-    # Small durable counters (downloads, etc). Point at a persistent
-    # volume in production if you care about surviving restarts.
-    download_count_file: str = "data/download_count.json"
+    # --- Deduplication config (safe defaults; not required) ---
+    # The B2 "folder" your source videos live in.
+    library_prefix: str = "library/"
+    # Persistent perceptual-hash index (incremental across runs).
+    index_key: str = "dedup/index/hash_index.json"
+    # Where per-run cluster reports are written.
+    reports_prefix: str = "dedup/reports/"
+    # Default pairwise Hamming-distance threshold for near-duplicate clustering.
+    dedup_default_threshold: int = 8
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @property
+    def b2_endpoint(self) -> str:
+        """Derive the S3 endpoint from the region — no hardcoded hostnames."""
+        return f"https://s3.{self.b2_region}.backblazeb2.com"
 
     @property
     def cors_origins(self) -> list[str]:

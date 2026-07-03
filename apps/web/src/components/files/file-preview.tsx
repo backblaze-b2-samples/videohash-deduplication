@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePreviewUrl } from "@/lib/queries";
-import type { FileMetadata } from "@vibe-coding-starter-kit/shared";
+import type { FileMetadata } from "@videohash-deduplication/shared";
 
 interface FilePreviewProps {
   file: FileMetadata | null;
@@ -67,6 +67,7 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
   if (!file) return null;
 
   const isImage = file.content_type.startsWith("image/");
+  const isVideo = file.content_type.startsWith("video/");
   const isPdf = file.content_type === "application/pdf";
   const previewError =
     isError && error instanceof Error
@@ -107,6 +108,14 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
                   unoptimized
                 />
               </div>
+            ) : isVideo && previewUrl ? (
+              <video
+                src={previewUrl}
+                controls
+                preload="metadata"
+                className="h-[min(55svh,400px)] min-h-[220px] w-full rounded bg-black object-contain"
+                aria-label={`Preview of ${file.filename}`}
+              />
             ) : isPdf && previewUrl ? (
               <iframe
                 src={previewUrl}

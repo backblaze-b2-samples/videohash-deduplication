@@ -1,17 +1,16 @@
 "use client";
 
-import { FileIcon, HardDrive, Upload, Download } from "lucide-react";
+import { Film, HardDrive, Layers, Recycle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
-import { useFileStats } from "@/lib/queries";
+import { useDedupStats } from "@/lib/queries";
 
-export function StatsCards() {
-  const { data: stats, isLoading, error, refetch } = useFileStats();
+export function DedupStatsCards() {
+  const { data: stats, isLoading, error, refetch } = useDedupStats();
 
-  // Surface fetch failures inline rather than rendering "0 files / 0 B" —
-  // that lies to the user about the bucket state when really the API is
-  // just unreachable.
+  // Surface fetch failures inline rather than rendering zeros — that would lie
+  // about the library state when really the API is just unreachable.
   if (error) {
     return (
       <Card>
@@ -23,10 +22,14 @@ export function StatsCards() {
   }
 
   const cards = [
-    { title: "Total Files", value: stats?.total_files ?? 0, icon: FileIcon },
-    { title: "Storage Used", value: stats?.total_size_human ?? "0 B", icon: HardDrive },
-    { title: "Uploads Today", value: stats?.uploads_today ?? 0, icon: Upload },
-    { title: "Total Downloads", value: stats?.total_downloads ?? 0, icon: Download },
+    { title: "Library Videos", value: stats?.library_video_count ?? 0, icon: Film },
+    { title: "Library Size", value: stats?.library_size_human ?? "0 B", icon: HardDrive },
+    { title: "Dedup Runs", value: stats?.run_count ?? 0, icon: Layers },
+    {
+      title: "Reclaimable (latest)",
+      value: stats?.latest_reclaimable_human ?? "0 B",
+      icon: Recycle,
+    },
   ];
 
   return (

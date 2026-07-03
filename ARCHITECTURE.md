@@ -1,23 +1,21 @@
-<!-- last_verified: 2026-03-10 -->
+<!-- last_verified: 2026-07-03 -->
 # Architecture
 
 ## Components
 
 - **apps/web/** — Next.js 16 frontend (App Router, Tailwind v4, shadcn/ui)
-  - Dashboard with stats, upload chart, recent uploads
-  - File upload with drag-and-drop, progress tracking
-  - File browser with preview, download, delete
+  - Dashboard with library/run stats, videos-hashed-per-day chart, recent runs
+  - Dedup Runs: list + "New dedup run" dialog + cluster-report detail
+  - Library explorer (`library/` prefix, with per-video hash status) + full-bucket file browser
+  - Ingest (drag-and-drop videos into `library/`)
   - Dark mode via `next-themes`
 - **services/api/** — FastAPI backend (layered architecture)
-  - REST API for file upload, listing, deletion
-  - B2 S3 integration via boto3
-  - File metadata extraction (images, PDFs)
+  - Dedup pipeline: perceptual hashing (`videohash`) + Hamming-distance clustering
+  - Incremental hash index + cluster reports stored in B2
+  - B2 S3 integration via boto3 (list, download, get/put JSON, presign, delete)
   - Health check endpoint with B2 connectivity verification
-  - Structured JSON logging with request tracing
-  - Prometheus-format metrics endpoint
-- **packages/shared/** — TypeScript type definitions
-  - Mirrors Pydantic models from the API
-  - Consumed by `apps/web/` as workspace dependency
+  - Structured JSON logging with request tracing; Prometheus-format metrics
+- **packages/shared/** — TypeScript type definitions mirroring the Pydantic models
 
 ## Backend Layering
 
@@ -40,8 +38,9 @@ runtime/   FastAPI routes — calls service, never repo directly
 1. Dependencies flow downward only: `types` -> `config` -> `repo` -> `service` -> `runtime`
 2. No backward imports (e.g., service must not import from runtime)
 3. `boto3` only allowed in `repo/` layer
-4. All boundary data uses Pydantic models (no raw dicts across layers)
-5. Each file stays under 300 lines
+4. `videohash` is contained to `service/dedup.py`
+5. All boundary data uses Pydantic models (no raw dicts across layers)
+6. Each file stays under 300 lines
 
 ### Directory Structure
 
@@ -49,68 +48,64 @@ runtime/   FastAPI routes — calls service, never repo directly
 services/api/
   main.py                  App entrypoint, middleware, router registration
   app/
-    types/                 Pydantic models (FileMetadata, UploadStats, etc.)
+    types/                 Pydantic models (FileMetadata, DedupReport, LibraryVideo, ...)
     config/                Settings loaded from environment
     repo/                  B2 S3 client (data access layer)
-    service/               Business logic (upload, files, metadata)
-    runtime/               FastAPI route handlers
-  tests/                   pytest tests (structural + integration)
+    service/               Business logic (dedup, runs, files, upload, metadata)
+    runtime/               FastAPI route handlers (runs, files, upload, health, metrics)
+  tests/                   pytest tests (structural + unit)
+scripts/
+  seed_library.py          Generate demo clips with bundled ffmpeg, upload to library/
 ```
 
 ## Boundary Invariants
 
-- **No external SDK leakage**: `boto3` is only imported in `app/repo/`. All other layers interact with B2 through the repo interface.
-- **No raw dicts at boundaries**: All data crossing layer boundaries uses typed Pydantic models.
-- **No mutable globals**: Configuration is read-only after init. No module-level mutable state shared between layers.
-- **Validated inputs**: All HTTP inputs validated by FastAPI/Pydantic. All file keys validated against prefix allowlist.
+- **No external SDK leakage**: `boto3` only in `app/repo/`; `videohash` only in `app/service/dedup.py`.
+- **No raw dicts at boundaries**: typed Pydantic models across layers.
+- **No mutable globals**: configuration is read-only after init.
+- **Validated inputs**: HTTP inputs validated by FastAPI/Pydantic; object keys and run ids validated against path traversal.
 
 ## Deployment
 
-- **Local dev** — `pnpm dev` runs both services via `concurrently`
-  - Web: `localhost:3000`
-  - API: `localhost:8000`
-- **Railway** — two services from the same repo
-  - See `infra/railway/README.md` for configuration
+- **Local dev** — `pnpm dev` runs both services via `concurrently` (web `:3000`, API `:8000`)
+- **Railway** — two services from the same repo; see `infra/railway/README.md`
 
 ## Data Stores
 
-- **Backblaze B2** — object storage (S3-compatible API)
-  - All uploaded files stored in a single bucket
-  - File listing and metadata via S3 `list_objects_v2` / `head_object`
-  - No application database — B2 is the sole data store
-
-## External Services
-
-- **Backblaze B2 S3 API** — file storage, retrieval, deletion, presigned URLs
+- **Backblaze B2** — the sole data store (S3-compatible API). Three artifact families:
+  - `library/` — source videos
+  - `dedup/index/hash_index.json` — persistent, incremental perceptual-hash index
+  - `dedup/reports/<run_id>.json` — immutable per-run cluster reports
+- No application database.
 
 ## Trust Boundaries
 
-See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
+See [docs/SECURITY.md](docs/SECURITY.md).
 
-- **Frontend -> API** — CORS-restricted to configured origins. `CORSMiddleware` is registered LAST in `main.py` (outermost) so it wraps **every** response, including uncaught-exception 500s — otherwise the browser would block error responses and the UI would only see an opaque "network error". See [docs/RELIABILITY.md](docs/RELIABILITY.md#error-handling).
-- **API -> B2** — authenticated via application keys, signature v4
-- **Client -> B2** — presigned URLs for download (10-min expiry, forced attachment)
+- **Frontend -> API** — CORS-restricted; `CORSMiddleware` is registered LAST in `main.py` (outermost) so it wraps every response, including uncaught-exception 500s.
+- **API -> B2** — authenticated via application keys, signature v4; endpoint derived from `B2_REGION`.
+- **Client -> B2** — presigned URLs (inline for previews, attachment for downloads; 10-min expiry).
 
 ## Data Flows
 
-- **Upload**: Browser -> `POST /upload` (multipart) -> API validates -> service orchestrates -> repo writes to B2 -> metadata extracted -> response
-- **List**: Browser -> `GET /files` -> service calls repo -> returns file list
-- **Download**: Browser -> `GET /files/{key}/download` -> service validates key -> repo generates presigned URL -> browser downloads
-- **Delete**: Browser -> `DELETE /files/{key}` -> service validates key -> repo deletes from B2
+- **Ingest**: Browser -> `POST /upload` (multipart) -> validate video -> repo writes to `library/`
+- **Run**: Browser -> `POST /runs` -> service lists `library/`, downloads each un-indexed video, hashes it (`videohash`), updates the index, clusters near-duplicates, writes `dedup/reports/<run_id>.json` -> returns report
+- **Read runs**: `GET /runs` (list) / `GET /runs/{run_id}` (report) -> repo reads report JSON from B2
+- **Delete run**: `DELETE /runs/{run_id}` -> repo deletes the report object
+- **Library/Files**: `GET /videos` (library + index status) / `GET /files*` (bucket browse, presign, delete)
 
 ## Observability
 
-- Structured JSON logging on all requests with `request_id`
-- Request timing middleware (logs duration per request; also the catch-all that converts uncaught exceptions to a typed JSON 500)
-- `/metrics` endpoint (Prometheus format: request count, latency, upload count)
-- `/health` endpoint (B2 connectivity check)
+- Structured JSON logging with `request_id`; request timing + catch-all 500 middleware
+- `/metrics` (Prometheus format) and `/health` (B2 connectivity) endpoints
 
 ## Canonical Files
 
-- Layered API handler: `services/api/app/runtime/upload.py`
-- Service orchestration: `services/api/app/service/upload.py`
+- Dedup hashing + clustering: `services/api/app/service/dedup.py`
+- Run orchestration: `services/api/app/service/runs.py`
+- Run routes: `services/api/app/runtime/runs.py`
 - B2 data access (repo layer): `services/api/app/repo/b2_client.py`
-- Pydantic models: `services/api/app/types/` (`files.py`, `upload.py`, `stats.py`, `formatting.py`)
+- Pydantic models: `services/api/app/types/` (`dedup.py`, `files.py`, `stats.py`, `formatting.py`)
 - Config (pydantic-settings): `services/api/app/config/settings.py`
 - Structural tests: `services/api/tests/test_structure.py`
 - Frontend API client: `apps/web/src/lib/api-client.ts`
@@ -118,13 +113,14 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
 
 ## Core Features
 
-- [File Upload](docs/features/file-upload.md)
-- [File Browser](docs/features/file-browser.md)
+- [Perceptual Video Hashing](docs/features/perceptual-hashing.md)
+- [Deduplication Runs](docs/features/deduplication-runs.md)
+- [Ingest](docs/features/ingest.md)
+- [File Browser & Library Explorer](docs/features/file-browser.md)
 - [Dashboard](docs/features/dashboard.md)
-- [Metadata Extraction](docs/features/metadata-extraction.md)
 
 ## References
 
-- [docs/SECURITY.md](docs/SECURITY.md) — security principles and implementation
-- [docs/RELIABILITY.md](docs/RELIABILITY.md) — reliability expectations
-- [AGENTS.md](AGENTS.md) — architectural invariants and agent instructions
+- [docs/SECURITY.md](docs/SECURITY.md)
+- [docs/RELIABILITY.md](docs/RELIABILITY.md)
+- [AGENTS.md](AGENTS.md)

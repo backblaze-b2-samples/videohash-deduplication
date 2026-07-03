@@ -1,19 +1,19 @@
 {
-  "name": "vibe-coding-starter-kit",
+  "name": "videohash-deduplication",
   "private": true,
   "scripts": {
     "doctor": "node scripts/doctor.mjs",
     "predev": "node scripts/doctor.mjs",
     "dev": "sh scripts/dev.sh",
-    "dev:web": "pnpm --filter @vibe-coding-starter-kit/web dev",
+    "dev:web": "pnpm --filter @videohash-deduplication/web dev",
     "dev:api": "cd services/api && .venv/bin/uvicorn main:app --reload --port ${API_PORT:-8000}",
-    "build": "pnpm --filter @vibe-coding-starter-kit/web build",
-    "typecheck": "pnpm --filter @vibe-coding-starter-kit/web typecheck",
-    "lint": "pnpm --filter @vibe-coding-starter-kit/web lint",
+    "build": "pnpm --filter @videohash-deduplication/web build",
+    "typecheck": "pnpm --filter @videohash-deduplication/web typecheck",
+    "lint": "pnpm --filter @videohash-deduplication/web lint",
     "lint:api": "cd services/api && .venv/bin/ruff check .",
     "test:api": "cd services/api && .venv/bin/python -m pytest",
     "check:structure": "cd services/api && .venv/bin/python -m pytest tests/test_structure.py -v",
-    "test:e2e": "pnpm --filter @vibe-coding-starter-kit/web exec playwright test"
+    "test:e2e": "pnpm --filter @videohash-deduplication/web exec playwright test"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

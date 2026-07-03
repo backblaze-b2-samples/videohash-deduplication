@@ -1,9 +1,12 @@
 import type {
-  DailyUploadCount,
+  DailyCount,
+  DedupReport,
+  DedupRunRequest,
+  DedupStats,
   FileMetadata,
   FileUploadResponse,
-  UploadStats,
-} from "@vibe-coding-starter-kit/shared";
+  LibraryVideo,
+} from "@videohash-deduplication/shared";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -132,14 +135,6 @@ export async function getFiles(prefix = "", limit = 100) {
   );
 }
 
-export async function getFileStats() {
-  return apiFetch<UploadStats>("/files/stats");
-}
-
-export async function getUploadActivity(days = 7) {
-  return apiFetch<DailyUploadCount[]>(`/files/stats/activity?days=${days}`);
-}
-
 export async function getFile(key: string) {
   return apiFetchWithLegacyFallback<FileMetadata>(
     `/files-by-key/metadata?${fileKeyQuery(key)}`,
@@ -154,7 +149,7 @@ export async function getDownloadUrl(key: string) {
   );
 }
 
-/** Preview-only presigned URL — does NOT increment the download counter. */
+/** Preview-only presigned URL for inline <img>/<video> rendering. */
 export async function getPreviewUrl(key: string) {
   return apiFetchWithLegacyFallback<{ url: string }>(
     `/files-by-key/preview?${fileKeyQuery(key)}`,
@@ -169,6 +164,44 @@ export async function deleteFile(key: string) {
     {
       method: "DELETE",
     }
+  );
+}
+
+// --- Deduplication API ---
+
+export async function getDedupStats() {
+  return apiFetch<DedupStats>("/dedup/stats");
+}
+
+export async function getHashActivity(days = 7) {
+  return apiFetch<DailyCount[]>(`/dedup/stats/activity?days=${days}`);
+}
+
+export async function getVideos(prefix?: string) {
+  const qs = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
+  return apiFetch<LibraryVideo[]>(`/videos${qs}`);
+}
+
+export async function getRuns() {
+  return apiFetch<DedupReport[]>("/runs");
+}
+
+export async function getRun(runId: string) {
+  return apiFetch<DedupReport>(`/runs/${encodeURIComponent(runId)}`);
+}
+
+export async function createRun(body: DedupRunRequest) {
+  return apiFetch<DedupReport>("/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteRun(runId: string) {
+  return apiFetch<{ deleted: boolean; run_id: string }>(
+    `/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE" }
   );
 }
 

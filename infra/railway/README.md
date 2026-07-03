@@ -18,16 +18,19 @@ Deploy both services (web + api) on Railway.
 - **Build Command**: `pip install -r requirements.txt`
 - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
+> `videohash` shells out to `ffmpeg`; the bundled `imageio-ffmpeg` binary is put
+> on `PATH` at runtime, so no extra Railway system package is required.
+
 ## Environment Variables
 
 Set these on the API service:
 
 | Variable | Value |
 |----------|-------|
-| `B2_ENDPOINT` | Your B2 S3 endpoint |
-| `B2_KEY_ID` | Your B2 key ID |
-| `B2_APPLICATION_KEY` | Your B2 key |
+| `B2_APPLICATION_KEY_ID` | Your B2 application keyID |
+| `B2_APPLICATION_KEY` | Your B2 application key |
 | `B2_BUCKET_NAME` | Your bucket name |
+| `B2_REGION` | Region slug, e.g. `us-west-004` (the S3 endpoint is derived from it) |
 | `API_CORS_ORIGINS` | Your web service URL (e.g., `https://web-production-xxx.up.railway.app`) |
 
 Set this on the Web service:

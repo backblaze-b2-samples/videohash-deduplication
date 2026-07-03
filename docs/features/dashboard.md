@@ -1,57 +1,52 @@
-<!-- last_verified: 2026-06-25 -->
+<!-- last_verified: 2026-07-03 -->
 # Feature: Dashboard
 
 ## Purpose
-Provide an at-a-glance overview of file storage usage and recent upload activity.
+Provide an at-a-glance overview of the dedup library and recent run activity.
 
 ## Used By
 - UI: `/` page (dashboard home)
-- API: `GET /files/stats`, `GET /files`, `GET /files/stats/activity`
+- API: `GET /dedup/stats`, `GET /dedup/stats/activity`, `GET /runs`
 
 ## Core Functions
-- `apps/web/src/components/dashboard/stats-cards.tsx` — 4 stat cards
-- `apps/web/src/components/dashboard/recent-uploads-table.tsx` — last 10 uploads
-- `apps/web/src/components/dashboard/upload-chart.tsx` — bar chart of uploads per day
-- `apps/web/src/lib/api-client.ts` — `getFileStats()`, `getFiles()`, `getUploadActivity()`
-- `services/api/app/runtime/files.py` — `GET /files/stats` handler
-- `services/api/app/service/files.py` — `get_stats()` business logic
-- `services/api/app/repo/b2_client.py` — `get_upload_stats()` data access
-
-## Canonical Files
-- Dashboard page layout: `apps/web/src/components/dashboard/stats-cards.tsx`
-- Stats service logic: `services/api/app/service/files.py`
+- `apps/web/src/components/dashboard/dedup-stats-cards.tsx` — 4 stat cards
+- `apps/web/src/components/dashboard/recent-runs-table.tsx` — recent dedup runs
+- `apps/web/src/components/dashboard/hash-activity-chart.tsx` — bar chart of videos hashed per day
+- `apps/web/src/lib/api-client.ts` — `getDedupStats()`, `getHashActivity()`, `getRuns()`
+- `services/api/app/runtime/runs.py` — `GET /dedup/stats` and `/dedup/stats/activity` handlers
+- `services/api/app/service/runs.py` — `get_dedup_stats()`, `get_hash_activity()`
 
 ## Inputs
 - None (dashboard loads data automatically)
 
 ## Outputs
-- `GET /files/stats` → `UploadStats` (total_files, total_size_bytes, total_size_human, uploads_today, total_downloads)
-- `GET /files` (limit 10) → `FileMetadata[]` for recent uploads table (sorted newest-first)
-- `GET /files/stats/activity?days=7` → `DailyUploadCount[]` for chart (server-side aggregation)
+- `GET /dedup/stats` → `DedupStats` (library_video_count, library_size_*, run_count, latest_cluster_count, latest_reclaimable_*)
+- `GET /dedup/stats/activity?days=7` → `DailyCount[]` (videos hashed per day, from the index)
+- `GET /runs` → `DedupReport[]` for the recent-runs table
 
 ## Flow
-- Page loads → three parallel API calls (stats, recent files, upload activity)
-- Stats cards display total files, storage used, uploads today, total downloads
-- Upload chart displays server-aggregated daily counts for last 7 days as bar chart after activity data is known
-- Recent uploads table shows last 10 files with filename, size, type, date, status badge
+- Page loads → parallel API calls (dedup stats, hash activity, runs)
+- Stat cards display library video count, library size, run count, latest-run reclaimable storage
+- The activity chart shows videos hashed per day over the last 7 days
+- The recent-runs table lists the latest runs with video/cluster counts and reclaimable bytes
 
 ## Edge Cases
-- API unavailable → error states with retry where supported; activity chart does not show a false zero state while loading
-- No files uploaded → empty chart message, empty table message
-- Large file count → stats endpoint paginates through all objects using `ContinuationToken`
+- API unavailable → inline error states with retry; the chart avoids a false zero state while loading
+- No videos / no runs → empty chart + empty table messages
+- Large library → stats paginate through all objects using `ContinuationToken`
 
 ## UX States
-- Loading: skeleton placeholders for cards, table, and upload activity chart
-- Empty: "No files uploaded yet" / "No upload data available yet"
+- Loading: skeleton placeholders for cards, chart, and table
+- Empty: "No hashing yet" / "No runs yet"
 - Loaded: populated cards, chart, table
 
 ## Verification
-- Test files: `services/api/tests/test_upload_activity.py`, `services/api/tests/test_recent_files.py`
-- Required cases: stats with files, stats with empty bucket, API error fallback
+- Test files: `services/api/tests/test_dedup.py`
 - Quick verify command: `pnpm test:api`
 - Full verify command: `pnpm lint && pnpm lint:api && pnpm test:api && pnpm check:structure`
 - Pass criteria: all pytest tests green, no ruff violations
 
 ## Related Docs
 - [ARCHITECTURE.md](../../ARCHITECTURE.md)
+- [Deduplication Runs](deduplication-runs.md)
 - [App Workflows](../app-workflows.md)
